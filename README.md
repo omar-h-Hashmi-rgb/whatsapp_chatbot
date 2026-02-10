@@ -109,4 +109,4 @@ GOOGLE_PRIVATE_KEY=service_account_private_key
     *   Add User Authentication (Auth0 or Supabase Auth).
 
 ---
-*Built with ❤️ by [Your Name/Team]*
+*Built with ❤️ by Omar Hashmi*
