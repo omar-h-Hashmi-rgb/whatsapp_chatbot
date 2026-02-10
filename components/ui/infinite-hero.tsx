@@ -1,3 +1,4 @@
+/// <reference path="../../types/three-elements.d.ts" />
 "use client";
 
 import { useGSAP } from "@gsap/react";

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
-    "@react-three/fiber": "^9.5.0",
+    "@react-three/fiber": "^8.17.10",
     "@supabase/supabase-js": "^2.39.0",
     "@types/three": "^0.182.0",
     "clsx": "^2.0.0",
