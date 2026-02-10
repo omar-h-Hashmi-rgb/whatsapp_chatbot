@@ -37,12 +37,16 @@ export async function checkAvailability(calendarId: string, startDateTime: strin
 
 export async function createEvent(calendarId: string, summary: string, start: string, end: string) {
     try {
+        const instructorEmail = process.env.CALENDAR_ID_INSTRUCTOR;
+        const attendees = instructorEmail && instructorEmail.includes('@') ? [{ email: instructorEmail }] : [];
+
         const res = await calendar.events.insert({
             calendarId,
             requestBody: {
                 summary,
                 start: { dateTime: start },
                 end: { dateTime: end },
+                attendees,
             },
         });
         return res.data;

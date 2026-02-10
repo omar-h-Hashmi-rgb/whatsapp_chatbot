@@ -51,10 +51,11 @@ export async function POST(req: NextRequest) {
     Extract validity JSON:
     {
         "intent": "reschedule" | "query" | "cancel" | "other",
-        "target_date": "YYYY-MM-DD" (calculate from relative terms like "tomorrow", "next moday"),
+        "target_date": "YYYY-MM-DD" (calculate from relative terms like "tomorrow", "next monday"),
         "target_time": "HH:mm" (24-hour format),
         "response_text": "Natural language response confirming understanding (e.g. 'Checking if 3 PM works...')"
     }
+    IMPORTANT: If the user wants to BOOK, SCHEDULE, MOVE, or CHANGE a lesson, set intent to "reschedule".
     If date is missing, assume today or tomorrow based on context. 
     If time is missing, ask for it in response_text and set intent to "other".
     `;
@@ -77,8 +78,11 @@ export async function POST(req: NextRequest) {
 
         const aiContent = chatCompletion.choices[0].message.content;
         const aiData = JSON.parse(aiContent || '{}');
+        console.log('AI Extraction:', aiData);
 
         // Default response if not rescheduling
+        // MISSION CRITICAL: If the AI sets intent to 'reschedule', we perform calendar logic.
+        // We should ensure 'booking' is also considered a 'reschedule' intent.
         if (aiData.intent !== 'reschedule') {
             const botResponse = aiData.response_text || "I can help you reschedule. Just tell me when!";
 
