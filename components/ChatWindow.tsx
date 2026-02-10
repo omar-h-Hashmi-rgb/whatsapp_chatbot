@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Student, ChatMessage } from '@/types';
-import { Send, UserCircle } from 'lucide-react';
+import { Send, UserCircle, Home } from 'lucide-react';
 import { clsx } from 'clsx';
+import Link from 'next/link';
 
 interface ChatWindowProps {
     student: Student | null;
@@ -11,6 +12,12 @@ interface ChatWindowProps {
 
 export default function ChatWindow({ student, messages, onSendMessage }: ChatWindowProps) {
     const [input, setInput] = useState('');
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll to bottom
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
 
     const handleSend = () => {
         if (!input.trim()) return;
@@ -32,9 +39,16 @@ export default function ChatWindow({ student, messages, onSendMessage }: ChatWin
                     <UserCircle className="w-16 h-16 text-gray-300" />
                 </div>
                 <h2 className="text-2xl font-light text-gray-700 mb-2">WhatsApp Web</h2>
-                <p className="text-gray-500 text-sm">
+                <p className="text-gray-500 text-sm mb-6">
                     Send and receive messages without keeping your phone online.
                 </p>
+                <Link
+                    href="/"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-gray-700 transition-colors"
+                >
+                    <Home className="w-4 h-4" />
+                    <span>Back to Home</span>
+                </Link>
             </div>
         );
     }
@@ -50,6 +64,9 @@ export default function ChatWindow({ student, messages, onSendMessage }: ChatWin
                         <p className="text-xs text-gray-500">{student.phone_number}</p>
                     </div>
                 </div>
+                <Link href="/" title="Back to Home" className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-600">
+                    <Home className="w-5 h-5" />
+                </Link>
             </div>
 
             {/* Messages */}
@@ -58,21 +75,22 @@ export default function ChatWindow({ student, messages, onSendMessage }: ChatWin
                     <div
                         key={msg.id}
                         className={clsx(
-                            "max-w-[70%] rounded-lg p-2 shadow-sm text-sm relative",
+                            "max-w-[70%] rounded-lg p-3 shadow-sm text-sm relative flex flex-col min-w-[120px]",
                             msg.sender === 'user'
                                 ? "bg-[#d9fdd3] ml-auto rounded-tr-none"
                                 : "bg-white mr-auto rounded-tl-none"
                         )}
                     >
-                        <p className="text-gray-900">{msg.message}</p>
+                        <p className="text-gray-900 break-words pr-4 mb-2">{msg.message}</p>
                         <span className={clsx(
-                            "text-[10px] float-right mt-1 ml-2",
-                            msg.sender === 'user' ? "text-green-800" : "text-gray-500"
+                            "text-[10px] self-end mt-1 font-medium",
+                            msg.sender === 'user' ? "text-gray-500" : "text-gray-400"
                         )}>
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                     </div>
                 ))}
+                <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}

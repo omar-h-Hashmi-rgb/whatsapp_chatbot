@@ -33,6 +33,15 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ response: "Error: Student not found." });
         }
 
+        // --- SNAPSHOT: Save User Message ---
+        const { error: insertError } = await supabase.from('chats').insert({
+            student_id: studentId,
+            message: message,
+            sender: 'user',
+        });
+
+        if (insertError) console.error('Error saving user message:', insertError);
+
         const studentCalendarId = student.calendar_id;
 
         // 2. Groq AI Understanding
@@ -71,7 +80,17 @@ export async function POST(req: NextRequest) {
 
         // Default response if not rescheduling
         if (aiData.intent !== 'reschedule') {
-            return NextResponse.json({ response: aiData.response_text || "I can help you reschedule. Just tell me when!" });
+            const botResponse = aiData.response_text || "I can help you reschedule. Just tell me when!";
+
+            // --- SNAPSHOT: Save Bot Response ---
+            const { error: botInsertError } = await supabase.from('chats').insert({
+                student_id: studentId,
+                message: botResponse,
+                sender: 'bot',
+            });
+            if (botInsertError) console.error('Error saving bot message:', botInsertError);
+
+            return NextResponse.json({ response: botResponse });
         }
 
         // 3. Rescheduling Logic
@@ -109,50 +128,92 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        let finalResponse = "";
+
         // 4. Execution
         if (!conflictingEvent) {
             // CASE: FREE SLOT
             if (currentUserEvent) {
                 // Move existing
                 await moveEvent(studentCalendarId, currentUserEvent.id!, startIso, endIso);
-                return NextResponse.json({
-                    response: `✅ Moved your lesson to ${aiData.target_time} on ${aiData.target_date}.`
-                });
+                finalResponse = `✅ Moved your lesson to ${aiData.target_time} on ${aiData.target_date}.`;
             } else {
                 // Create new
                 await createEvent(studentCalendarId, `Lesson with ${student.name}`, startIso, endIso);
-                return NextResponse.json({
-                    response: `✅ Booked a new lesson for ${aiData.target_time} on ${aiData.target_date}.`
-                });
+                finalResponse = `✅ Booked a new lesson for ${aiData.target_time} on ${aiData.target_date}.`;
             }
         } else {
-            // CASE: TAKEN (Smart Swap)
-            if (!currentUserEvent) {
-                return NextResponse.json({ response: "❌ That slot is taken, and you don't have an existing lesson to swap with." });
+            // CASE: TAKEN (Conflict Resolution)
+
+            // Strategy 1: SWAP (If user has an existing slot to trade)
+            if (currentUserEvent) {
+
+                // Move B to A's old slot
+                if (currentUserEvent.start?.dateTime && currentUserEvent.end?.dateTime && conflictingStudent) {
+                    console.log(`Swapping: Moving ${conflictingStudent.name} to ${currentUserEvent.start.dateTime}`);
+                    await moveEvent(
+                        conflictingStudent.calendar_id,
+                        conflictingEvent.id!,
+                        currentUserEvent.start.dateTime,
+                        currentUserEvent.end.dateTime
+                    );
+                }
+
+                // Move A to Target (B's old slot / Target time)
+                await moveEvent(studentCalendarId, currentUserEvent.id!, startIso, endIso);
+
+                finalResponse = `🔄 Slot was taken by ${conflictingStudent?.name}, but I swapped you both! \n\nYou are now booked for ${aiData.target_time}.\n${conflictingStudent?.name} has been moved to your old time.`;
+
+            } else {
+                // Strategy 2: BUMP (If user has NO existing slot)
+                // Try to move Conflicting Student (B) to the NEXT hour
+                const bumpStart = targetEnd; // 1 hour later
+                const bumpEnd = addHours(bumpStart, 1);
+
+                // Check if Bump Slot is free (Simplistic check: asking Supabase implies checking all students)
+                let bumpSlotTaken = false;
+                // Re-fetch all students to check global availability for the bump slot
+                const { data: allStudentsBump } = await supabase.from('students').select('*');
+
+                if (allStudentsBump) {
+                    for (const s of allStudentsBump) {
+                        const events = await listEvents(s.calendar_id, bumpStart.toISOString(), bumpEnd.toISOString());
+                        if (events.length > 0) {
+                            bumpSlotTaken = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!bumpSlotTaken && conflictingStudent) {
+                    // Move B to Bump Slot
+                    console.log(`Bumping: Moving ${conflictingStudent.name} to ${format(bumpStart, 'HH:mm')}`);
+                    await moveEvent(
+                        conflictingStudent.calendar_id,
+                        conflictingEvent.id!,
+                        bumpStart.toISOString(),
+                        bumpEnd.toISOString()
+                    );
+
+                    // Create A in Target Slot
+                    await createEvent(studentCalendarId, `Lesson with ${student.name}`, startIso, endIso);
+
+                    finalResponse = `⚠️ Slot was taken by ${conflictingStudent?.name}, so I moved them to ${format(bumpStart, 'HH:mm')}!\n\nYou are now booked for ${aiData.target_time}.`;
+                } else {
+                    finalResponse = `❌ That slot is taken by ${conflictingStudent?.name}, and I couldn't automatically move them to the next hour (it's also busy).`;
+                }
             }
-
-            // SWAP!
-            // 1. Move Conflicting Student (B) to User's (A) old slot
-            // 2. Move User (A) to Target slot (where B was)
-
-            // Move B to A's old slot
-            if (currentUserEvent.start?.dateTime && currentUserEvent.end?.dateTime && conflictingStudent) {
-                console.log(`Swapping: Moving ${conflictingStudent.name} to ${currentUserEvent.start.dateTime}`);
-                await moveEvent(
-                    conflictingStudent.calendar_id,
-                    conflictingEvent.id!,
-                    currentUserEvent.start.dateTime,
-                    currentUserEvent.end.dateTime
-                );
-            }
-
-            // Move A to Target (B's old slot / Target time)
-            await moveEvent(studentCalendarId, currentUserEvent.id!, startIso, endIso);
-
-            return NextResponse.json({
-                response: `🔄 Slot was taken by ${conflictingStudent?.name}, but I swapped you both! \n\nYou are now booked for ${aiData.target_time}.\n${conflictingStudent?.name} has been moved to your old time.`
-            });
         }
+
+        // --- SNAPSHOT: Save Bot Response ---
+        const { error: finalInsertError } = await supabase.from('chats').insert({
+            student_id: studentId,
+            message: finalResponse,
+            sender: 'bot',
+        });
+        if (finalInsertError) console.error('Error saving final bot message:', finalInsertError);
+
+        return NextResponse.json({ response: finalResponse });
 
     } catch (error) {
         console.error('Error in chat API:', error);
